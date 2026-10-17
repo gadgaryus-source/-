@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2456b0">
+<style>*,*::before,*::after{box-sizing:border-box}html{-webkit-text-size-adjust:100%}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img,svg{max-width:100%}[hidden]{display:none!important}</style>
+<title>트랙 구간 타이머</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: one column, stadium scoreboard on top, oval track below, settings card last */
+:root{
+  --bg:#eef3fb; --surface:#ffffff; --fg:#0f1f3d; --muted:#5a6a88; --line:#d3ddee;
+  --track:#2456b0; --lane:#ffffff; --infield:#dfe9f7;
+  --accent:#ff6a13; --ok:#16935b;
+  --f-num:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0a1429; --surface:#12203d; --fg:#e8eefb; --muted:#93a3c3; --line:#22365e;
+  --track:#2f63c4; --lane:#dbe6ff; --infield:#0f1c36; --accent:#ff8a3d; --ok:#3cc98a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0a1429; --surface:#12203d; --fg:#e8eefb; --muted:#93a3c3; --line:#22365e;
+  --track:#2f63c4; --lane:#dbe6ff; --infield:#0f1c36; --accent:#ff8a3d; --ok:#3cc98a; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px}
+.wrap{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-family:var(--f-num);font-weight:800;font-size:1.6rem;letter-spacing:.02em;margin:0;text-wrap:balance}
+h1 small{font-family:var(--f-body);font-weight:500;font-size:.8rem;color:var(--muted);margin-left:8px;letter-spacing:0}
+.board{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px;align-items:center}
+.phase{font-weight:700;font-size:.95rem;letter-spacing:.08em;color:var(--muted)}
+.phase.run{color:var(--track)} .phase.rest{color:var(--ok)} .phase.ready{color:var(--accent)}
+.big{font-family:var(--f-num);font-weight:800;font-size:clamp(4.6rem,26vw,8rem);line-height:.9;font-variant-numeric:tabular-nums;transition:color .15s}
+.big.count{color:var(--accent)}
+/* main row: lap count (left, always visible) + seconds (right) */
+.main{display:flex;align-items:stretch;justify-content:space-between;gap:12px;width:100%}
+.lapbig{background:var(--accent);color:#fff;border-radius:18px;padding:10px 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:34%}
+.lapbig b{font-family:var(--f-num);font-weight:800;font-size:clamp(3.6rem,20vw,6rem);line-height:.9;font-variant-numeric:tabular-nums}
+.lapbig span{font-weight:700;font-size:1rem;letter-spacing:.08em}
+.lapbig.pulse{animation:pulse .6s ease-out}
+@keyframes pulse{0%{transform:scale(1.12)}100%{transform:scale(1)}}
+.secbig{flex:1;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;min-width:0}
+.secbig span{font-weight:700;color:var(--muted);font-size:1rem;letter-spacing:.08em}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%}
+.stat{text-align:center;padding:8px 4px;border-radius:12px;background:var(--bg)}
+.stat b{display:block;font-family:var(--f-num);font-size:1.9rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.stat b span{color:var(--muted);font-size:1.1rem}
+.stat i{font-style:normal;font-size:.75rem;color:var(--muted);letter-spacing:.06em}
+svg.oval{width:100%;max-width:100%;height:auto;display:block}
+.controls{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:10px}
+button{font-family:var(--f-body);font-size:1.05rem;font-weight:700;border-radius:14px;border:0;padding:16px 10px;cursor:pointer}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#go{background:var(--track);color:#fff}
+#go.pause{background:var(--accent)}
+#reset,#skip{background:var(--surface);color:var(--fg);border:1px solid var(--line)}
+#skip:disabled{opacity:.4;cursor:default}
+.controls button{white-space:nowrap}
+details{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:4px 16px}
+summary{font-weight:700;padding:12px 0;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding-bottom:12px;align-items:end}
+label{display:flex;flex-direction:column;gap:6px;font-size:.8rem;color:var(--muted);font-weight:500;white-space:nowrap;min-width:0}
+select{font-family:var(--f-body);font-size:.95rem;font-weight:500;height:52px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%;min-width:0}
+input[type=number]{font-family:var(--f-num);font-size:1.5rem;font-weight:700;height:52px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%;box-sizing:border-box;font-variant-numeric:tabular-nums}
+.segs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding-bottom:16px;align-items:end}
+.sub{font-size:.8rem;font-weight:700;color:var(--fg);margin:0 0 10px}
+.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:end;padding-bottom:16px}
+.row button{height:52px;padding:0 12px;font-size:.95rem;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;white-space:nowrap}
+.row .wide{grid-column:1 / -1}
+.hint{margin:-4px 0 16px}
+.grp{border-top:1px solid var(--line);padding-top:14px;margin-top:2px}
+.grp h2{font-size:.85rem;font-weight:700;color:var(--fg);margin:0 0 12px;letter-spacing:.04em}
+.savebtn{width:100%;height:48px;font-size:.95rem;background:var(--track);color:#fff;border-radius:10px;margin-bottom:10px}
+.presets{list-style:none;margin:0 0 16px;padding:0;display:flex;flex-direction:column;gap:8px}
+.presets li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.presets .load{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;text-align:left;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:.85rem;font-weight:500;min-width:0}
+.presets .load.on{border-color:var(--accent)}
+.presets .load em{font-style:normal;color:var(--muted)}
+.presets .load b{font-family:var(--f-num);font-size:1.25rem;font-weight:700;margin-left:3px;color:var(--fg)}
+.presets .del{width:48px;background:var(--bg);color:var(--muted);border:1px solid var(--line);border-radius:10px;font-size:1.1rem;padding:0}
+
+.grid .ghost{height:52px;padding:0 12px;font-size:.95rem;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;white-space:nowrap}
+.summary{padding-bottom:14px}
+
+.volbar{display:grid;grid-template-columns:44px minmax(0,1fr) 44px 4em;align-items:center;gap:6px 10px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px 12px}
+.volbar .vl{grid-column:1 / -1;font-size:.8rem;color:var(--muted);font-weight:500}
+.volbar button{height:44px;padding:0;font-size:1.4rem;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px}
+.volbar input{width:100%;height:32px;accent-color:var(--accent);margin:0}
+.volbar b{font-family:var(--f-num);font-size:1.15rem;text-align:right;font-variant-numeric:tabular-nums}
+.vol{display:flex;flex-direction:column;gap:8px;padding-bottom:16px}
+.vol label{flex-direction:row;align-items:baseline;gap:8px}
+.vol label b{color:var(--fg);font-family:var(--f-num);font-size:1.1rem}
+.vol input{width:100%;height:32px;accent-color:var(--accent)}
+.toggles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding-bottom:16px}
+.toggles label{flex-direction:row;align-items:center;gap:6px;font-size:.9rem;color:var(--fg)}
+.toggles input{width:20px;height:20px;margin:0;accent-color:var(--track)}
+.toggles label{white-space:nowrap}
+.toggles .wide2{grid-column:1 / -1;white-space:normal}
+.summary{font-size:.85rem;color:var(--muted);padding-bottom:14px;line-height:1.6}
+.summary b{color:var(--fg)}
+.note{font-size:.75rem;color:var(--muted);line-height:1.5}
+/* Running view: bigger numbers, settings and title out of the way */
+body.running h1,body.running details{display:none}
+body.running .big{font-size:clamp(6rem,36vw,12rem)}
+body.running .lapbig b{font-size:clamp(4.6rem,26vw,8.5rem)}
+body.running .lapbig span,body.running .secbig span{font-size:1.2rem}
+body.running .stat b{font-size:2.8rem}
+body.running .stat b span{font-size:1.5rem}
+body.running .stat i{font-size:.9rem}
+body.running .phase{font-size:1.2rem}
+@media (prefers-reduced-motion:reduce){.big{transition:none}.lapbig.pulse{animation:none}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <h1>트랙 구간 타이머<small>구간 카운트다운</small></h1>
+
+  <section class="board" aria-live="polite">
+    <div class="phase" id="phase">대기 중</div>
+    <div class="main">
+      <div class="lapbig" id="lapBox"><b id="lapNum">1</b><span>바퀴</span></div>
+      <div class="secbig"><div class="big" id="big">20</div><span>초</span></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="sSeg">1<span>/4</span></b><i>구간</i></div>
+      <div class="stat"><b id="sLap">1<span>/10</span></b><i>바퀴</i></div>
+      <div class="stat"><b id="sSet">1<span>/3</span></b><i>세트</i></div>
+    </div>
+    <svg class="oval" id="oval" viewBox="0 0 340 170" aria-label="트랙 진행 표시">
+      <path id="trackOuter" d="M90,10 H250 A75,75 0 0 1 250,160 H90 A75,75 0 0 1 90,10 Z" fill="var(--track)"/>
+      <path d="M90,38 H250 A47,47 0 0 1 250,132 H90 A47,47 0 0 1 90,38 Z" fill="var(--infield)"/>
+      <path id="lane" d="M90,24 H250 A61,61 0 0 1 250,146 H90 A61,61 0 0 1 90,24 Z" fill="none" stroke="var(--lane)" stroke-opacity=".35" stroke-width="1.2" stroke-dasharray="4 5"/>
+      <g id="ticks"></g>
+      <circle id="runner" r="8" fill="var(--accent)" stroke="var(--lane)" stroke-width="2.5"/>
+      <text id="ovalTxt" x="170" y="91" text-anchor="middle" fill="var(--muted)" style="font-family:var(--f-num);font-size:18px;font-weight:700">00:00</text>
+    </svg>
+  </section>
+
+  <div class="controls">
+    <button id="go" type="button">시작</button>
+    <button id="skip" type="button" disabled>건너뛰기</button>
+    <button id="reset" type="button">초기화</button>
+  </div>
+  <div class="volbar">
+    <span class="vl">타이머 볼륨</span>
+    <button id="volDown" type="button" aria-label="볼륨 낮추기">−</button>
+    <input id="vol" type="range" min="0" max="300" step="10" value="150" aria-label="타이머 볼륨">
+    <button id="volUp" type="button" aria-label="볼륨 높이기">＋</button>
+    <b id="volTxt">150%</b>
+  </div>
+
+  <details id="settings" open>
+    <summary>설정</summary>
+    <div class="summary" id="sum"></div>
+
+    <section class="grp">
+      <h2>자주 쓰는 설정</h2>
+      <button id="savePreset" class="savebtn" type="button">＋ 현재 설정 저장</button>
+      <ul class="presets" id="presets"></ul>
+      <p class="note" id="presetEmpty">저장한 설정이 없습니다. 값을 맞춘 뒤 "현재 설정 저장"을 누르면 여기에 추가됩니다.</p>
+    </section>
+
+    <section class="grp">
+      <h2>1바퀴 구간</h2>
+      <div class="grid">
+        <label for="nseg">1바퀴 구간 수<input id="nseg" type="number" min="1" max="12" value="2"></label>
+        <span></span>
+        <label for="all">구간 초 일괄 입력<input id="all" type="number" min="1" max="600" value="13"></label>
+        <button id="applyAll" class="ghost" type="button">모두 적용</button>
+      </div>
+      <div class="sub">구간별 초 (구간마다 다르게 입력 가능)</div>
+      <div class="segs" id="segs"></div>
+    </section>
+
+    <section class="grp">
+      <h2>바퀴 · 세트</h2>
+      <div class="grid">
+        <label for="laps">바퀴 수 (1세트당)<input id="laps" type="number" min="1" max="99" value="5"></label>
+        <label for="sets">세트 수<input id="sets" type="number" min="1" max="9" value="5"></label>
+        <label for="rest">세트 간 휴식 (초)<input id="rest" type="number" min="0" max="900" value="120"></label>
+      </div>
+    </section>
+
+    <section class="grp">
+      <h2>준비 · 카운트다운</h2>
+      <div class="grid">
+        <label for="readySec">시작 전 준비 (초)<input id="readySec" type="number" min="0" max="60" value="3"></label>
+        <label for="countN">카운트다운 (초)<input id="countN" type="number" min="0" max="10" value="3"></label>
+      </div>
+      <p class="note hint">준비: 출발 전 대기 시간 · 0이면 바로 출발<br>카운트다운: 구간 끝나기 몇 초 전부터 · 0이면 끔</p>
+      <div class="toggles">
+        <label for="tVoice"><input id="tVoice" type="checkbox" checked>카운트 음성</label>
+      </div>
+    </section>
+
+    <section class="grp">
+      <h2>소리 · 알림</h2>
+      <div class="grid" id="voiceOpts">
+        <label for="voiceSel">음성 종류<select id="voiceSel"><option value="">기본 음성</option></select></label>
+        <label for="pitch">음성 톤<select id="pitch"><option value="1">보통</option><option value="1.3">높게 (잘 들림)</option><option value="1.6">아주 높게</option></select></label>
+      </div>
+      <div class="row"><button id="testVoice" class="wide" type="button">음성 테스트 ("한 바퀴")</button><span class="note wide" id="ttsNote"></span></div>
+      <div class="toggles">
+        <label for="tVib"><input id="tVib" type="checkbox" checked>진동</label>
+        <label for="tBg" class="wide2"><input id="tBg" type="checkbox" checked>백그라운드 실행 (화면 꺼져도 계속)</label>
+      </div>
+    </section>
+
+    <p class="note">구간 끝은 짧은 음, 바퀴 끝은 두 번 울리며 "한 바퀴, 두 바퀴"처럼 바퀴 수를 불러주고, 세트 끝은 세 번 울리며 "N세트 완료"까지 알려줍니다. 바퀴·세트 음성은 카운트 음성을 꺼도 항상 나옵니다. 일시정지 중에도 설정을 바꿀 수 있고, "계속"을 누르면 바뀐 값으로 이어집니다. 자주 쓰는 설정은 목록을 누르면 불러오고(멈춤·일시정지 중), ✕로 지웁니다. 음악을 멈추지 않습니다. "백그라운드 실행"을 켜두면 화면을 끄거나 다른 앱으로 가도 타이머가 계속 돌아가도록 합니다 (기기 절전 설정에 따라 멈출 수 있음).</p>
+  </details>
+</div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const KEY='trackTimer.v1';
+  let cfg={laps:5,sets:5,rest:120,segs:[13,13],readySec:3,countN:3,voice:true,vib:true,vol:150,bg:true,voiceName:'',pitch:1.3,lock:false};
+  try{const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s&&Array.isArray(s.segs)){ delete s.lock; if(s.readySec===undefined&&s.ready===false) s.readySec=0; delete s.ready; cfg=Object.assign(cfg,s);} }catch(e){}
+  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(cfg))}catch(e){}};
+
+  const clampInt=(v,a,b,d)=>{v=parseInt(v,10);return isNaN(v)?d:Math.min(b,Math.max(a,v))};
+
+  /* ---------- settings UI ---------- */
+  function renderSegs(){
+    const box=$('segs'); box.innerHTML='';
+    cfg.segs.forEach((s,i)=>{
+      const l=document.createElement('label'); l.htmlFor='seg'+i; l.textContent=(i+1)+'구간';
+      const inp=document.createElement('input'); inp.type='number'; inp.min=1; inp.max=600; inp.value=s; inp.id='seg'+i;
+      inp.addEventListener('change',()=>{cfg.segs[i]=clampInt(inp.value,1,600,20); inp.value=cfg.segs[i]; changed();});
+      l.appendChild(inp); box.appendChild(l);
+    });
+  }
+  function loadInputs(){
+    $('laps').value=cfg.laps; $('sets').value=cfg.sets; $('rest').value=cfg.rest; $('nseg').value=cfg.segs.length;
+    $('readySec').value=cfg.readySec; $('countN').value=cfg.countN; $('vol').value=cfg.vol; showVol(); $('tVoice').checked=cfg.voice; $('tVib').checked=cfg.vib; $('tBg').checked=cfg.bg;
+    renderSegs();
+  }
+  const fmt=t=>{t=Math.max(0,Math.round(t));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;
+    return (h?h+':'+String(m).padStart(2,'0'):String(m).padStart(2,'0'))+':'+String(s).padStart(2,'0')};
+  function changed(){
+    try{renderPresets()}catch(e){}
+    save(); drawTicks();
+    const lap=cfg.segs.reduce((a,b)=>a+b,0);
+    const total=lap*cfg.laps*cfg.sets+cfg.rest*(cfg.sets-1);
+    $('sum').innerHTML=`1바퀴 <b>${lap}초</b> (${fmt(lap)}) · 1세트 <b>${fmt(lap*cfg.laps)}</b><br>총 <b>${cfg.sets}세트 × ${cfg.laps}바퀴</b>, 휴식 포함 <b>${fmt(total)}</b>`;
+    if(st.phase==='idle') showIdle();
+  }
+  ['laps','sets','rest'].forEach(id=>$(id).addEventListener('change',e=>{
+    const lim={laps:[1,99,10],sets:[1,9,3],rest:[0,900,0]}[id];
+    cfg[id]=clampInt(e.target.value,...lim); e.target.value=cfg[id]; changed();}));
+  $('nseg').addEventListener('change',e=>{
+    const n=clampInt(e.target.value,1,12,4); e.target.value=n;
+    const base=cfg.segs[cfg.segs.length-1]||20;
+    while(cfg.segs.length<n) cfg.segs.push(base); cfg.segs.length=n; renderSegs(); changed();});
+  $('applyAll').addEventListener('click',()=>{const v=clampInt($('all').value,1,600,20);$('all').value=v;cfg.segs=cfg.segs.map(()=>v);renderSegs();changed();});
+  $('readySec').addEventListener('change',e=>{cfg.readySec=clampInt(e.target.value,0,60,3);e.target.value=cfg.readySec;save()});
+  $('countN').addEventListener('change',e=>{cfg.countN=clampInt(e.target.value,0,10,3);e.target.value=cfg.countN;save()});
+  $('tVoice').addEventListener('change',e=>{cfg.voice=e.target.checked;save()});
+  $('tVib').addEventListener('change',e=>{cfg.vib=e.target.checked;save()});
+  $('tBg').addEventListener('change',e=>{cfg.bg=e.target.checked;save(); if(!cfg.bg) kaStop(); else if(st.timer) kaStart();});
+  const APP=(()=>{try{return !!(window.AndroidBridge&&window.AndroidBridge.isApp())}catch(e){return false}})();
+  function showVol(){$('volTxt').textContent=cfg.vol+'%'; if(master) master.gain.value=cfg.vol/100; if(APP) try{AndroidBridge.setVolume(Math.min(100,cfg.vol))}catch(e){} }
+  $('vol').addEventListener('input',e=>{cfg.vol=clampInt(e.target.value,0,300,150);showVol();save();});
+  $('vol').addEventListener('change',()=>{audio();tone(1320,.25);});
+  function stepVol(d){cfg.vol=Math.max(0,Math.min(parseInt($('vol').max,10),cfg.vol+d)); $('vol').value=cfg.vol; showVol(); save(); audio(); tone(1320,.2);}
+  $('volDown').addEventListener('click',()=>stepVol(-10));
+  $('volUp').addEventListener('click',()=>stepVol(10));
+
+  /* ---------- track drawing ---------- */
+  const lane=$('lane'); const L=lane.getTotalLength();
+  // path runs clockwise from top-left; start line = middle of bottom straight, runner goes counter-clockwise
+  const START=160+Math.PI*61+80;
+  function ptAt(frac){
+    let d=START-frac*L; d=((d%L)+L)%L; return lane.getPointAtLength(d);
+  }
+  function drawTicks(){
+    const g=$('ticks'); g.innerHTML=''; const n=cfg.segs.length;
+    for(let i=0;i<n;i++){
+      const p=ptAt(i/n), q=ptAt(i/n+0.002);
+      const dx=q.x-p.x, dy=q.y-p.y, len=Math.hypot(dx,dy)||1, nx=-dy/len, ny=dx/len;
+      const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+      ln.setAttribute('x1',p.x-nx*14); ln.setAttribute('y1',p.y-ny*14);
+      ln.setAttribute('x2',p.x+nx*14); ln.setAttribute('y2',p.y+ny*14);
+      ln.setAttribute('stroke','var(--lane)'); ln.setAttribute('stroke-width',i===0?4:2);
+      g.appendChild(ln);
+    }
+  }
+  function placeRunner(frac){const p=ptAt(frac);$('runner').setAttribute('cx',p.x);$('runner').setAttribute('cy',p.y);}
+
+  /* ---------- sound / voice / vibration ---------- */
+  let ac=null;
+  let master=null;
+  function audio(){
+    if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)();
+      // master volume (0-300%) -> limiter so boosted beeps stay loud without distorting
+      master=ac.createGain(); master.gain.value=cfg.vol/100;
+      const lim=ac.createDynamicsCompressor(); lim.threshold.value=-1; lim.knee.value=0; lim.ratio.value=20; lim.attack.value=.001; lim.release.value=.1;
+      master.connect(lim).connect(ac.destination);
+    }catch(e){}}
+    if(ac&&ac.state==='suspended') ac.resume(); return ac; }
+  function tone(freq,dur,at=0,vol=.78){
+    if(APP){try{AndroidBridge.beep(freq,Math.round(dur*1000),Math.round(at*1000))}catch(e){} return;}
+    const a=audio(); if(!a) return; const t=a.currentTime+at;
+    const o=a.createOscillator(), g=a.createGain(); o.type='square'; o.frequency.value=freq;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+.01); g.gain.exponentialRampToValueAtTime(.001,t+dur);
+    o.connect(g).connect(master||a.destination); o.start(t); o.stop(t+dur+.02);
+  }
+  const TTS='speechSynthesis' in window;
+  let koVoice=null;
+  let koVoices=[];
+  function pickVoice(){
+    try{
+      koVoices=speechSynthesis.getVoices().filter(x=>/^ko/i.test(x.lang));
+      koVoice=koVoices.find(x=>x.name===cfg.voiceName)||koVoices[0]||null;
+      const sel=$('voiceSel'); sel.innerHTML='';
+      if(!koVoices.length){sel.innerHTML='<option value="">기본 음성</option>';return;}
+      koVoices.forEach((v,i)=>{const o=document.createElement('option');o.value=v.name;o.textContent=(i+1)+'. '+v.name.replace(/^(Google|Samsung|Microsoft)\s*/,'$1 ').slice(0,28);sel.appendChild(o);});
+      sel.value=koVoice?koVoice.name:'';
+    }catch(e){}
+  }
+  if(TTS){pickVoice(); try{speechSynthesis.onvoiceschanged=pickVoice}catch(e){}}
+  function speakNow(txt){
+    const u=new SpeechSynthesisUtterance(txt); u.lang='ko-KR'; u.rate=1.0; u.pitch=cfg.pitch; u.volume=Math.min(1,cfg.vol/100);
+    if(koVoice) u.voice=koVoice; speechSynthesis.speak(u);
+  }
+  function say(txt,always){
+    if((!cfg.voice&&!always)||!txt) return;
+    if(APP){try{AndroidBridge.speak(txt)}catch(e){} return;}
+    if(!TTS) return;
+    try{
+      if(speechSynthesis.speaking||speechSynthesis.pending){speechSynthesis.cancel(); setTimeout(()=>{try{speakNow(txt)}catch(e){}},80);}
+      else speakNow(txt);
+      if(speechSynthesis.paused) speechSynthesis.resume();
+    }catch(e){}
+  }
+  function vib(p){ if(!cfg.vib) return; if(APP){try{AndroidBridge.vibrate([].concat(p).join(','))}catch(e){} return;} try{navigator.vibrate&&navigator.vibrate(p)}catch(e){} }
+  function hush(){ if(APP){try{AndroidBridge.stopSpeak()}catch(e){} return;} try{speechSynthesis.cancel()}catch(e){} }
+  let flashT=null;
+  function flash(){const b=$('lapBox');b.classList.remove('pulse');void b.offsetWidth;b.classList.add('pulse');}
+  const KO=['','하나','둘','셋','넷','다섯','여섯','일곱','여덟','아홉','열'];
+  // 고유어 수사 + 단위 (한 바퀴, 두 바퀴, 스무 바퀴 …)
+  function lapKo(n){
+    const ones=['','한','두','세','네','다섯','여섯','일곱','여덟','아홉'];
+    const tens=['','열','스물','서른','마흔','쉰','예순','일흔','여든','아흔'];
+    const t=Math.floor(n/10), o=n%10;
+    let w=(t===2&&o===0)?'스무':tens[t];
+    return w+ones[o];
+  }
+  const SINO=['영','일','이','삼','사','오','육','칠','팔','구'];
+  const lapSay=n=>lapKo(n)+' 바퀴';
+  const setSay=n=>SINO[n]+' 세트 완료';
+  const cue={
+    count(n){tone(880,.12); say(KO[n]); vib(60)},
+    seg(){tone(1320,.25); vib(120)},
+    lap(n){flash(n+'바퀴');tone(1320,.18);tone(1320,.18,.25); vib([200,100,200]); say(lapSay(n),true)},
+    set(n,l){flash(l+'바퀴 · '+n+'세트 완료');tone(990,.2);tone(1180,.2,.25);tone(1480,.45,.5); vib([400,150,400,150,400]); say(lapSay(l)+'. '+setSay(n),true)},
+    go(){tone(1480,.4); vib(300)},
+    done(){[1046,1318,1568,2093].forEach((f,i)=>tone(f,.3,i*.22)); vib([500,200,500,200,800]); say(lapSay(cfg.laps)+'. 운동 완료',true)}
+  };
+
+  /* ---------- engine ---------- */
+  const st={phase:'idle',set:1,lap:1,seg:0,start:0,dur:0,pausedAt:0,last:null,timer:null,lock:null};
+  function begin(phase,dur,t0){st.phase=phase;st.dur=dur;st.start=t0;st.last=null;}
+  function advance(){
+    const t0=st.start+st.dur*1000, n=cfg.segs.length;
+    if(st.phase==='ready'||st.phase==='rest'){
+      if(st.phase==='rest'){st.set++;st.lap=1;}
+      st.seg=0; cue.go(); begin('run',cfg.segs[0],t0); return;
+    }
+    if(st.phase!=='run') return;
+    st.seg++;
+    if(st.seg<n){cue.seg(); begin('run',cfg.segs[st.seg],t0); return;}
+    st.seg=0;
+    if(st.lap<cfg.laps){cue.lap(st.lap); st.lap++; begin('run',cfg.segs[0],t0); return;}
+    if(st.set<cfg.sets){cue.set(st.set,st.lap);
+      if(cfg.rest>0){begin('rest',cfg.rest,t0);} else {st.set++;st.lap=1;begin('run',cfg.segs[0],t0);} return;}
+    finish();
+  }
+  function tick(){
+    if(st.phase==='idle'||st.phase==='done'||st.pausedAt) return;
+    const now=performance.now();
+    let guard=0;
+    while((now-st.start)/1000>=st.dur && guard++<50 && st.phase!=='done') advance();
+    if(st.phase==='done') return;
+    const remain=st.dur-(now-st.start)/1000, c=Math.ceil(remain);
+    if(c>=1&&c<=cfg.countN&&c!==st.last&&st.phase!=='ready'){st.last=c;cue.count(c);}
+    if(st.phase==='ready'&&c>=1&&c!==st.last){st.last=c;tone(880,.12);if(c<=10) say(KO[c]);}
+    render(remain);
+  }
+  function render(remain){
+    const n=cfg.segs.length, big=$('big'), c=Math.ceil(remain);
+    big.textContent=Math.max(0,c);
+    big.classList.toggle('count',c<=cfg.countN||st.phase==='ready');
+    const ph=$('phase');
+    ph.className='phase '+(st.phase==='run'?'run':st.phase);
+    ph.textContent=st.phase==='ready'?'준비':st.phase==='rest'?`휴식 · 다음 ${st.set+1}세트`:st.phase==='run'?`${st.seg+1}구간 달리는 중`:'';
+    $('sSeg').innerHTML=`${st.seg+1}<span>/${n}</span>`;
+    $('sLap').innerHTML=`${st.lap}<span>/${cfg.laps}</span>`; $('lapNum').textContent=st.lap;
+    $('sSet').innerHTML=`${st.set}<span>/${cfg.sets}</span>`;
+    let frac=0, lapEl=0;
+    if(st.phase==='run'){const el=Math.min(st.dur,st.dur-remain); frac=(st.seg+el/st.dur)/n;
+      lapEl=cfg.segs.slice(0,st.seg).reduce((a,b)=>a+b,0)+el;}
+    placeRunner(frac);
+    $('ovalTxt').textContent=st.phase==='rest'?'휴식':fmt(lapEl);
+    const left=Math.max(0,c);
+    bgMeta(st.phase==='ready'?`${st.lap}바퀴 · 준비 · ${left}초`:st.phase==='rest'?`${st.set}세트 끝 · 휴식 · ${fmt(left)}`:`${st.lap}바퀴 · ${st.seg+1}구간 · ${left}초`,
+      `${st.lap}/${cfg.laps}바퀴 · ${st.set}/${cfg.sets}세트`,
+      st.phase==='rest'?fmt(left):left, st.phase==='rest'?'rest':st.phase==='ready'?'ready':(left<=cfg.countN?'count':'run'));
+  }
+  function showIdle(){
+    st.set=1;st.lap=1;st.seg=0;
+    $('big').textContent=cfg.segs[0]; $('big').classList.remove('count');
+    $('phase').className='phase'; $('phase').textContent='대기 중';
+    $('sSeg').innerHTML=`1<span>/${cfg.segs.length}</span>`;
+    $('sLap').innerHTML=`1<span>/${cfg.laps}</span>`; $('lapNum').textContent=1;
+    $('sSet').innerHTML=`1<span>/${cfg.sets}</span>`;
+    $('ovalTxt').textContent='00:00'; placeRunner(0);
+  }
+  function finish(){
+    st.phase='done'; stopLoop(); cue.done();
+    $('big').textContent='완료'; $('big').classList.remove('count');
+    $('phase').className='phase rest'; $('phase').textContent=`${cfg.sets}세트 × ${cfg.laps}바퀴 완료`;
+    $('go').textContent='다시 시작'; $('go').classList.remove('pause'); releaseLock(); $('skip').disabled=true;
+    bgMeta('운동 완료',`${cfg.sets}세트 × ${cfg.laps}바퀴`,'완료','done'); document.body.classList.remove('running'); setTimeout(bgStop,4000);
+  }
+  async function getLock(){try{if('wakeLock' in navigator) st.lock=await navigator.wakeLock.request('screen')}catch(e){}}
+  function releaseLock(){try{st.lock&&st.lock.release()}catch(e){} st.lock=null;}
+  function startLoop(){stopLoop(); st.timer=setInterval(tick,50);}
+  function stopLoop(){if(st.timer) clearInterval(st.timer); st.timer=null;}
+
+  /* ---------- background keep-alive + lock-screen display ---------- */
+  // Looping near-silent audio keeps Chrome from freezing the timer when the screen is off,
+  // and Media Session shows the current lap/set on the lock screen and notification shade.
+  let bgAudio=null, lastMeta='';
+  function silentWav(sec){
+    const rate=8000,n=rate*sec,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+    const w=(o,str)=>{for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i))};
+    w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+    v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+    for(let i=0;i<n;i++) v.setInt16(44+i*2,(i%2?1:-1),true); // inaudible
+    return URL.createObjectURL(new Blob([buf],{type:'audio/wav'}));
+  }
+  /* keep running in the background:
+     app -> Android foreground service; browser -> a very quiet continuous Web Audio tone,
+     which keeps Chrome treating the page as playing sound (no media notification, music keeps playing) */
+  let kaOsc=null;
+  function kaStart(){
+    if(!cfg.bg) return;
+    if(APP){try{AndroidBridge.keepAlive(true)}catch(e){} return;}
+    const a=audio(); if(!a||kaOsc) return;
+    try{
+      kaOsc=a.createOscillator(); const g=a.createGain();
+      kaOsc.frequency.value=40; g.gain.value=0.004; // effectively inaudible
+      kaOsc.connect(g).connect(a.destination); kaOsc.start();
+    }catch(e){kaOsc=null}
+  }
+  function kaStop(){
+    if(APP){try{AndroidBridge.keepAlive(false)}catch(e){} return;}
+    try{kaOsc&&kaOsc.stop()}catch(e){} kaOsc=null;
+  }
+  function bgStart(){
+    kaStart();
+    if(APP||!cfg.lock) return; // media playback would pause the user's music, so it is opt-in
+    try{
+      if(!bgAudio){bgAudio=new Audio(silentWav(10)); bgAudio.loop=true; bgAudio.volume=0.05;}
+      const p=bgAudio.play(); if(p&&p.catch) p.catch(()=>{});
+    }catch(e){}
+    try{
+      if('mediaSession' in navigator){
+        navigator.mediaSession.setActionHandler('play',()=>{if(st.pausedAt) resumeRun();});
+        navigator.mediaSession.setActionHandler('pause',()=>{if(!st.pausedAt&&st.timer) pauseRun();});
+        navigator.mediaSession.playbackState='playing';
+      }
+    }catch(e){}
+    lastMeta='';
+  }
+  function bgPause(){kaStop(); try{if(!bgAudio) return; bgAudio.pause();navigator.mediaSession&&(navigator.mediaSession.playbackState='paused')}catch(e){} }
+  function bgStop(){kaStop(); if(!bgAudio) return; bgPause(); try{if(navigator.mediaSession) navigator.mediaSession.metadata=null}catch(e){} }
+  // Big-number picture shown as the lock-screen "album art"
+  const artCv=document.createElement('canvas'); artCv.width=artCv.height=512;
+  function artwork(big,label){
+    const g=artCv.getContext('2d'), F='"Barlow Condensed","Arial Narrow",sans-serif';
+    g.fillStyle='#0a1429'; g.fillRect(0,0,512,512);
+    g.textBaseline='alphabetic';
+    // left: lap count
+    g.textAlign='left'; g.fillStyle='#ffffff'; g.font='800 230px '+F;
+    g.fillText(String(st.lap),28,300);
+    g.fillStyle='#93a3c3'; g.font='700 52px '+F; g.fillText(`/${cfg.laps} 바퀴`,32,370);
+    // right: seconds
+    g.textAlign='right'; g.fillStyle=label==='count'||label==='ready'?'#ff8a3d':label==='rest'?'#3cc98a':'#ffffff';
+    g.font='800 '+(String(big).length>3?150:230)+'px '+F;
+    g.fillText(String(big),484,300);
+    g.fillStyle='#93a3c3'; g.font='700 52px '+F;
+    g.fillText(label==='rest'?'휴식':label==='ready'?'준비':label==='pause'?'일시정지':label==='done'?'':'초',480,370);
+    // bottom band: set + segment
+    g.fillStyle='#2456b0'; g.fillRect(0,420,512,92);
+    g.fillStyle='#ffffff'; g.font='800 56px '+F;
+    g.textAlign='left'; g.fillText(`${st.set}/${cfg.sets} 세트`,28,486);
+    g.textAlign='right'; g.fillText(`${st.seg+1}/${cfg.segs.length} 구간`,484,486);
+    try{return artCv.toDataURL('image/png')}catch(e){return null}
+  }
+  function bgMeta(title,artist,big,label){
+    const key=title+'|'+artist+'|'+label; if(key===lastMeta) return; lastMeta=key;
+    try{ if(cfg.lock && !APP && 'mediaSession' in navigator && window.MediaMetadata){
+      const src=big!==undefined?artwork(big,label):null;
+      const md={title,artist,album:'트랙 구간 타이머'};
+      if(src) md.artwork=[{src,sizes:'512x512',type:'image/png'}];
+      navigator.mediaSession.metadata=new MediaMetadata(md);
+    }}catch(e){}
+    try{document.title=title+' · '+artist}catch(e){}
+  }
+
+  function startRun(){
+    st.set=1;st.lap=1;st.seg=0;st.pausedAt=0;
+    const t=performance.now();
+    if(cfg.readySec>0) begin('ready',cfg.readySec,t); else {cue.go(); begin('run',cfg.segs[0],t);}
+    $('settings').open=false; document.body.classList.add('running'); $('skip').disabled=false; startLoop(); getLock(); bgStart();
+    $('go').textContent='일시정지'; $('go').classList.add('pause');
+  }
+  function applyPausedChanges(){
+    // settings may have changed while paused: keep position valid and use the new durations
+    const n=cfg.segs.length;
+    if(st.seg>=n) st.seg=n-1;
+    if(st.lap>cfg.laps) st.lap=cfg.laps;
+    if(st.set>cfg.sets) st.set=cfg.sets;
+    if(st.phase==='run') st.dur=cfg.segs[st.seg];
+    else if(st.phase==='rest'){ if(cfg.rest>0) st.dur=cfg.rest; else st.dur=0; }
+    st.last=null;
+  }
+  function resumeRun(){
+    applyPausedChanges();
+    $('settings').open=false; document.body.classList.add('running');
+    st.start+=performance.now()-st.pausedAt; st.pausedAt=0; startLoop(); getLock(); bgStart();
+    $('go').textContent='일시정지'; $('go').classList.add('pause');
+  }
+  function pauseRun(){
+    st.pausedAt=performance.now(); stopLoop(); releaseLock(); bgPause(); hush();
+    $('go').textContent='계속'; $('go').classList.remove('pause'); $('phase').textContent='일시정지 · 설정 변경 가능';
+    document.body.classList.remove('running'); $('settings').open=true;
+    bgMeta('일시정지',`${st.lap}/${cfg.laps}바퀴 · ${st.set}/${cfg.sets}세트`,'II','pause');
+  }
+  $('go').addEventListener('click',()=>{
+    audio();
+    if(st.phase==='idle'||st.phase==='done'){ say('시작',true); startRun(); return; }
+    if(st.pausedAt) resumeRun(); else pauseRun();
+  });
+  // skip: end the current step (ready, segment or rest) right now and move to the next one
+  $('skip').addEventListener('click',()=>{
+    if(st.phase==='idle'||st.phase==='done') return;
+    audio();
+    const ref=st.pausedAt||performance.now();
+    st.start=ref-st.dur*1000;
+    hush(); advance();
+    if(st.phase==='done') return;
+    render(st.dur-(ref-st.start)/1000);
+    if(st.pausedAt) $('phase').textContent='일시정지 · 설정 변경 가능';
+  });
+  $('reset').addEventListener('click',()=>{
+    stopLoop(); releaseLock(); bgStop(); st.phase='idle'; st.pausedAt=0; hush();
+    $('go').textContent='시작'; $('go').classList.remove('pause'); document.body.classList.remove('running'); $('skip').disabled=true; showIdle(); try{document.title='트랙 구간 타이머'}catch(e){}
+  });
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&st.timer) tick(); });
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&st.timer&&!st.lock) getLock(); });
+
+  $('voiceSel').addEventListener('change',e=>{cfg.voiceName=e.target.value;koVoice=koVoices.find(x=>x.name===cfg.voiceName)||koVoice;save();say(lapSay(1),true);});
+  $('pitch').addEventListener('change',e=>{cfg.pitch=parseFloat(e.target.value)||1.3;save();say(lapSay(1),true);});
+  $('testVoice').addEventListener('click',()=>{audio();tone(1320,.18);tone(1320,.18,.25);say(lapSay(1),true); if(!APP&&TTS&&!koVoice) $('ttsNote').textContent='이 기기에서 한국어 목소리를 찾지 못했습니다. 휴대폰 설정에서 한국어 음성(TTS)을 설치하면 한국어로 나옵니다.';});
+  if(!APP&&!TTS) $('ttsNote').textContent='이 화면에서는 음성 기능을 지원하지 않습니다. 휴대폰 크롬이나 사파리에서 열어 주세요.';
+  if(APP){ $('vol').max=100; if(cfg.vol>100) cfg.vol=100; $('voiceOpts').hidden=true; }
+  $('pitch').value=String(cfg.pitch); if(TTS) pickVoice();
+  /* ---------- saved presets ---------- */
+  const PKEY='trackTimer.presets';
+  let presets=[];
+  try{presets=JSON.parse(localStorage.getItem(PKEY)||'[]')||[]}catch(e){presets=[]}
+  const savePresets=()=>{try{localStorage.setItem(PKEY,JSON.stringify(presets))}catch(e){}};
+  const presetOf=c=>({sets:c.sets,laps:c.laps,segs:c.segs.slice(),rest:c.rest,readySec:c.readySec,countN:c.countN});
+  const sameP=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  function secText(segs){return segs.every(v=>v===segs[0])?String(segs[0]):segs.join('/');}
+  function renderPresets(){
+    const ul=$('presets'); ul.innerHTML='';
+    const cur=presetOf(cfg);
+    presets.forEach((p,i)=>{
+      const li=document.createElement('li');
+      const b=document.createElement('button'); b.type='button'; b.className='load'+(sameP(p,cur)?' on':'');
+      b.innerHTML=`<span><em>세트</em><b>${p.sets}</b></span><span><em>바퀴</em><b>${p.laps}</b></span><span><em>구간</em><b>${p.segs.length}</b></span><span><em>초</em><b>${secText(p.segs)}</b></span>`;
+      b.title=`휴식 ${p.rest}초 · 준비 ${p.readySec}초 · 카운트다운 ${p.countN}초`;
+      b.addEventListener('click',()=>{
+        if(st.phase!=='idle'&&st.phase!=='done'&&!st.pausedAt) return; // only while stopped or paused
+        Object.assign(cfg,presetOf(p)); loadInputs(); changed();
+      });
+      const d=document.createElement('button'); d.type='button'; d.className='del'; d.textContent='✕'; d.setAttribute('aria-label','이 설정 삭제');
+      d.addEventListener('click',()=>{presets.splice(i,1);savePresets();renderPresets();});
+      li.append(b,d); ul.appendChild(li);
+    });
+    $('presetEmpty').hidden=presets.length>0;
+  }
+  $('savePreset').addEventListener('click',()=>{
+    const p=presetOf(cfg);
+    if(!presets.some(x=>sameP(x,p))){presets.unshift(p);savePresets();}
+    renderPresets();
+  });
+
+  loadInputs(); changed(); showIdle(); renderPresets();
+})();
+</script>
+
+</body>
+</html>

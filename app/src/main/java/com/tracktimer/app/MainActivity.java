@@ -62,6 +62,32 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // crash report: if the app crashed last time, show the error once so it can be sent for fixing
+        final File crash = new File(getFilesDir(), "crash.txt");
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((th, ex) -> {
+            try (java.io.PrintWriter pw = new java.io.PrintWriter(new java.io.FileWriter(crash))) {
+                pw.println("Android " + Build.VERSION.RELEASE + " / " + Build.MODEL);
+                ex.printStackTrace(pw);
+            } catch (Exception ignored) { }
+            if (prev != null) prev.uncaughtException(th, ex);
+        });
+        if (crash.exists()) {
+            String msg = "";
+            try (FileInputStream in = new FileInputStream(crash)) { byte[] b = new byte[(int) crash.length()]; int n = in.read(b); msg = new String(b, 0, Math.max(0, n), "UTF-8"); } catch (Exception ignored) { }
+            crash.delete();
+            android.widget.TextView tv = new android.widget.TextView(this);
+            tv.setTextIsSelectable(true);
+            tv.setTextColor(0xFFFFFFFF);
+            tv.setTextSize(12);
+            tv.setPadding(40, 120, 40, 120);
+            tv.setText("앱이 지난번에 오류로 꺼졌습니다. 이 화면을 캡처해서 보내주세요.\n앱을 다시 열면 정상 화면으로 시작합니다.\n\n" + msg);
+            android.widget.ScrollView sv = new android.widget.ScrollView(this);
+            sv.addView(tv);
+            setContentView(sv);
+            return;
+        }
+
         // keep the screen on and show over the lock screen while the timer is open
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (Build.VERSION.SDK_INT >= 27) {
@@ -74,17 +100,23 @@ public class MainActivity extends Activity {
         // hardware volume keys keep controlling media (music)
         setVolumeControlStream(AudioManager.STREAM_MUSIC);
 
+        try {
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
-                tts.setLanguage(Locale.KOREAN);
-                tts.setAudioAttributes(ALARM_ATTR);
-                tts.setSpeechRate(1.1f);
-                ttsReady = true;
+                try {
+                    tts.setLanguage(Locale.KOREAN);
+                    tts.setAudioAttributes(ALARM_ATTR);
+                    tts.setSpeechRate(1.1f);
+                    ttsReady = true;
+                } catch (Exception ignored) { }
             }
         });
+        } catch (Exception ignored) { }
 
+        try {
         synth = new TextToSpeech(this, status -> {
             if (status != TextToSpeech.SUCCESS) return;
+            try {
             synth.setLanguage(Locale.KOREAN);
             synth.setSpeechRate(1.1f);
             synth.setOnUtteranceProgressListener(new UtteranceProgressListener() {
@@ -106,8 +138,10 @@ public class MainActivity extends Activity {
             cacheVoice("시작");
             String[] counts = {"하나","둘","셋","넷","다섯","여섯","일곱","여덟","아홉","열"};
             for (String c : counts) cacheVoice(c);
-            for (int i = 1; i <= 30; i++) cacheVoice(lapKo(i) + " 바퀴");
+            for (int i = 1; i <= 100; i++) cacheVoice(lapKo(i) + " 바퀴");
+            } catch (Exception ignored) { }
         });
+        } catch (Exception ignored) { }
 
         web = new WebView(this);
         WebSettings s = web.getSettings();
@@ -119,11 +153,13 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient());
         web.addJavascriptInterface(new Bridge(), "AndroidBridge");
         // keep the page running at full priority when the screen is off or the app is in the background
-        if (Build.VERSION.SDK_INT >= 26) web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        try { if (Build.VERSION.SDK_INT >= 26) web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false); } catch (Exception ignored) { }
         // Android 13+: ask once so the "running" notification can be shown
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
-        }
+        try {
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+            }
+        } catch (Exception ignored) { }
         web.loadUrl("file:///android_asset/index.html");
         setContentView(web);
     }
@@ -216,8 +252,10 @@ public class MainActivity extends Activity {
     private static String lapKo(int n) {
         String[] ones = {"", "한", "두", "세", "네", "다섯", "여섯", "일곱", "여덟", "아홉"};
         String[] tens = {"", "열", "스물", "서른", "마흔", "쉰", "예순", "일흔", "여든", "아흔"};
-        int t = n / 10, o = n % 10;
-        return ((t == 2 && o == 0) ? "스무" : tens[t]) + ones[o];
+        String[] hund = {"", "백", "이백", "삼백"};
+        int h = Math.min(3, n / 100), r = n % 100;
+        int t = r / 10, o = r % 10;
+        return hund[h] + ((t == 2 && o == 0) ? "스무" : tens[t]) + ones[o];
     }
 
     private void stopVoiceTrack() {

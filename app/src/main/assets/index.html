@@ -178,7 +178,7 @@ body.running .phase{font-size:1.2rem}
     <section class="grp">
       <h2>바퀴 · 세트</h2>
       <div class="grid">
-        <label for="laps">바퀴 수 (1세트당)<input id="laps" type="number" min="1" max="99" value="5"></label>
+        <label for="laps">바퀴 수 (1세트당)<input id="laps" type="number" min="1" max="300" value="5"></label>
         <label for="sets">세트 수<input id="sets" type="number" min="1" max="9" value="5"></label>
         <label for="rest">세트 간 휴식 (초)<input id="rest" type="number" min="0" max="900" value="120"></label>
       </div>
@@ -249,7 +249,7 @@ body.running .phase{font-size:1.2rem}
     if(st.phase==='idle') showIdle();
   }
   ['laps','sets','rest'].forEach(id=>$(id).addEventListener('change',e=>{
-    const lim={laps:[1,99,10],sets:[1,9,3],rest:[0,900,0]}[id];
+    const lim={laps:[1,300,10],sets:[1,9,3],rest:[0,900,0]}[id];
     cfg[id]=clampInt(e.target.value,...lim); e.target.value=cfg[id]; changed();}));
   $('nseg').addEventListener('change',e=>{
     const n=clampInt(e.target.value,1,12,4); e.target.value=n;
@@ -345,9 +345,12 @@ body.running .phase{font-size:1.2rem}
   function lapKo(n){
     const ones=['','한','두','세','네','다섯','여섯','일곱','여덟','아홉'];
     const tens=['','열','스물','서른','마흔','쉰','예순','일흔','여든','아흔'];
-    const t=Math.floor(n/10), o=n%10;
+    const h=Math.floor(n/100), r=n%100;
+    const t=Math.floor(r/10), o=r%10;
     let w=(t===2&&o===0)?'스무':tens[t];
-    return w+ones[o];
+    // 100 and up: 백, 백한, 이백스무 ...
+    const H=['','백','이백','삼백'][h]||'';
+    return H+w+ones[o];
   }
   const SINO=['영','일','이','삼','사','오','육','칠','팔','구'];
   const lapSay=n=>lapKo(n)+' 바퀴';
